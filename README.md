@@ -11,7 +11,7 @@ CI/CD pipeline, persistent storage, and shell-based monitoring.
 | Teammate 3 | TODO | TODO | kitchen-worker, stats-api, k8s manifests, CD pipeline, check-databases.sh, ops-monitor |
 
 - Jira board: TODO (link)
-- Both websites: http://prod.16.179.57.193.nip.io (production), http://staging.16.179.57.193.nip.io (staging)
+- Both websites: https://dhaba-prod.duckdns.org (production), https://dhaba-staging.duckdns.org (staging). These DuckDNS names point at the VM's public IP (16.179.57.193), which is hardcoded in DuckDNS, so they break if the IP changes; an Elastic IP is the proper fix.
 - Actions tab: TODO (link)
 
 ## Services

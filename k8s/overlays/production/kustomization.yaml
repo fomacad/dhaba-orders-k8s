@@ -45,7 +45,13 @@ patches:
     patch: |-
       - op: replace
         path: /spec/rules/0/host
-        value: prod.16.179.57.193.nip.io
+        value: dhaba-prod.duckdns.org
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts:
+              - dhaba-prod.duckdns.org
+            secretName: dhaba-prod-tls
 
   # Higher limits than staging, and spread replicas over nodes when there is
   # more than one (ScheduleAnyway, so it still works on our single node)

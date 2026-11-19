@@ -9,7 +9,7 @@
 #            build), and scripts/rollback.sh uses it with the previous release.
 #
 # Needs: AWS_REGION, TEAM, KUBECONFIG (the deployer ServiceAccount), aws, kubectl, curl.
-# The runner is on the VM, where port 80 forwards to the ingress (BASE_URL).
+# The runner is on the VM, where port 443 forwards to the ingress (smoke tests use https).
 set -euo pipefail
 
 NS="${1:?usage: deploy.sh <staging|production> <sha>}"
@@ -20,8 +20,8 @@ BASE_URL="${BASE_URL:-http://localhost}"
 SERVICES=(web menu-api orders-api stats-api kitchen-worker)
 
 case "$NS" in
-  staging)    HOST="staging.${TEAM}.test" ;;
-  production) HOST="${TEAM}.test" ;;
+  staging)    HOST="dhaba-staging.duckdns.org" ;;
+  production) HOST="dhaba-prod.duckdns.org" ;;
   *) echo "unknown environment: $NS" >&2; exit 2 ;;
 esac
 
@@ -94,10 +94,19 @@ for s in postgres redis; do
 done
 
 # ---------------------------------------------------------------- smoke tests
-H=(-H "Host: $HOST")
-api() { curl -fsS --max-time 5 "${H[@]}" "$@"; }
+# Test through the VM's port 443 forwarder. --resolve points the DuckDNS name at
+# localhost; -k because a new host serves the ingress default certificate until
+# cert-manager issues the real one (this checks routing, not the certificate).
+BASE_URL="https://$HOST"
+api() { curl -fsSk --max-time 5 --resolve "$HOST:443:127.0.0.1" "$@"; }
 
-api "$BASE_URL/" >/dev/null || rollback "smoke: web page not served"
+# the ingress controller takes a moment to pick up a changed Ingress
+UP=""
+for _ in $(seq 1 30); do
+  if api "$BASE_URL/" >/dev/null 2>&1; then UP=yes; break; fi
+  sleep 2
+done
+[ -n "$UP" ] || rollback "smoke: web page not served"
 # (responses go into variables first: "curl | grep -q" can fail under pipefail)
 MENU=$(api "$BASE_URL/api/menu") || MENU=""
 grep -q '"items":\[{' <<<"$MENU" || rollback "smoke: menu did not load"
