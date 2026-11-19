@@ -9,7 +9,9 @@ RUN echo "export const GIT_COMMIT = '${GIT_COMMIT}';" > src/version.js
 RUN npm run build
 
 # ---- final stage ----
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS final
+FROM nginxinc/nginx-unprivileged:stable-alpine AS final
+USER root
+RUN apk upgrade --no-cache
 ARG GIT_COMMIT=unknown
 LABEL org.opencontainers.image.revision=$GIT_COMMIT
 COPY --from=build /app/dist /usr/share/nginx/html

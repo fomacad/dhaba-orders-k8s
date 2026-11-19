@@ -18,4 +18,3 @@ def set(key, value, ex=None):
         _client.set(key, value, ex=ex)
     except Exception:
         pass
-import os

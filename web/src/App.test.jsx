@@ -29,8 +29,8 @@ afterEach(() => {
 describe('App', () => {
   it('renders menu items fetched from /api/menu', async () => {
     render(<App />)
-    expect(await screen.findByText(/Chicken Karahi/)).toBeInTheDocument()
-    expect(screen.getByText(/Daal Chawal/)).toBeInTheDocument()
+    expect(await screen.findByText(/Chicken Karahi - \$12/)).toBeInTheDocument()
+    expect(screen.getByText(/Daal Chawal - \$7/)).toBeInTheDocument()
   })
 
   it('renders kitchen orders fetched from /api/orders', async () => {

@@ -1,0 +1,49 @@
+# C13: the rollback button. Actions -> Rollback -> Run workflow -> pick the environment.
+# Returns that environment to the release before the current one (release-history),
+# smoke-tests it, and reports to #alerts with who pressed the button.
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to roll back
+        type: choice
+        options: [staging, production]
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    name: Roll back ${{ inputs.environment }}
+    runs-on: [self-hosted, linux, dhaba-vm]
+    # never at the same time as a deployment to the same environment
+    concurrency: deploy-${{ inputs.environment }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TEAM: ${{ vars.TEAM }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use the deployer ServiceAccount (C10), not admin
+        env:
+          KCFG: ${{ secrets.DEPLOYER_KUBECONFIG }}
+        run: |
+          printf '%s' "$KCFG" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+      - name: Roll back
+        id: rollback
+        run: bash scripts/rollback.sh "${{ inputs.environment }}"
+      - name: Alert #alerts
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "${{ steps.rollback.outcome }}" = "success" ]; then RESULT="done"; else RESULT="FAILED"; fi
+          bash scripts/notify-slack.sh ":rewind: Manual rollback of *${{ inputs.environment }}* $RESULT - started by ${{ github.actor }} - <$RUN_URL|run ${{ github.run_number }}>"
+      - name: Remove kubeconfig
+        if: always()
+        run: rm -f "$RUNNER_TEMP/kubeconfig"

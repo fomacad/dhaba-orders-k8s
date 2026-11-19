@@ -45,4 +45,10 @@ patches:
     patch: |-
       - op: replace
         path: /spec/rules/0/host
-        value: staging.firewall-force.test
+        value: dhaba-staging.duckdns.org
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts:
+              - dhaba-staging.duckdns.org
+            secretName: dhaba-staging-tls

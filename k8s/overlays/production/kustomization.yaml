@@ -24,17 +24,17 @@ images:
     newName: 774527927491.dkr.ecr.ap-southeast-2.amazonaws.com/dhaba-firewall-force/kitchen-worker
     newTag: 726c4fbfef3d48913661561833e9f59ac12e2456
 
-# Production: 2 replicas of the light services. menu-api (2 gunicorn workers per pod)
+# Production: 1 replica of everything (the 2-replica design needs a bigger VM). menu-api (2 gunicorn workers per pod)
 # and kitchen-worker (JVM) stay at 1 because the VM has only ~2 GB of RAM.
 replicas:
   - name: web
-    count: 2
+    count: 1
   - name: menu-api
     count: 1
   - name: orders-api
-    count: 2
+    count: 1
   - name: stats-api
-    count: 2
+    count: 1
   - name: kitchen-worker
     count: 1
 
@@ -45,7 +45,13 @@ patches:
     patch: |-
       - op: replace
         path: /spec/rules/0/host
-        value: firewall-force.test
+        value: dhaba-prod.duckdns.org
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts:
+              - dhaba-prod.duckdns.org
+            secretName: dhaba-prod-tls
 
   # Higher limits than staging, and spread replicas over nodes when there is
   # more than one (ScheduleAnyway, so it still works on our single node)
@@ -69,7 +75,6 @@ patches:
               matchExpressions:
                 - key: app
                   operator: Exists
-            matchLabelKeys: [app]   # each Deployment is spread on its own app label
 
   - target:
       kind: Deployment

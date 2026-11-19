@@ -24,6 +24,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read                # lets the production job look up who approved it
 
 jobs:
   # ---------------------------------------------------------- Stage 1-2
@@ -107,15 +108,18 @@ jobs:
             -t "${{ steps.img.outputs.ref }}" \
             "$CONTEXT"
 
+      # Trivy via its official image, pinned to a known-safe version. We don't use
+      # aquasecurity/trivy-action: its tags were hijacked in March 2026 (CVE-2026-33634).
       - name: Scan (fail on CRITICAL)
         if: steps.exists.outputs.found != 'true'
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: ${{ steps.img.outputs.ref }}
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-          format: table
+        run: |
+          mkdir -p "$HOME/.cache/trivy"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.cache/trivy:/root/.cache/trivy" \
+            aquasec/trivy:0.69.3 image \
+            --severity CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
+            "${{ steps.img.outputs.ref }}"
 
       - name: Push
         if: steps.exists.outputs.found != 'true'
@@ -127,3 +131,98 @@ jobs:
       - name: Free disk on the VM
         if: always()
         run: docker image prune -f >/dev/null
+
+  # ---------------------------------------------------------- Stage 4a (C11)
+  deploy-staging:
+    name: Stage 4a deploy to staging
+    needs: [checks, build]
+    # run after a successful build, and also when nothing needed building (e.g. a k8s/ change)
+    if: always() && needs.checks.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: [self-hosted, linux, dhaba-vm]
+    environment: staging
+    concurrency: deploy-staging
+    outputs:
+      images: ${{ steps.deploy.outputs.images }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TEAM: ${{ vars.TEAM }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use the deployer ServiceAccount (C10), not admin
+        env:
+          KCFG: ${{ secrets.DEPLOYER_KUBECONFIG }}
+        run: |
+          printf '%s' "$KCFG" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+      - name: Deploy, wait, smoke test, roll back on failure
+        id: deploy
+        run: bash scripts/deploy.sh staging "${{ github.sha }}"
+      - name: Alert #alerts (C13)
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "${{ steps.deploy.outcome }}" = "success" ]; then ICON=":white_check_mark:"; RESULT="succeeded"; else ICON=":x:"; RESULT="FAILED"; fi
+          MSG="$ICON *staging* deployment $RESULT - commit \`${GITHUB_SHA::7}\` merged by ${{ github.actor }} - <$RUN_URL|run ${{ github.run_number }}>"
+          if [ "${{ steps.deploy.outputs.rolled_back }}" = "true" ]; then MSG="$MSG"$'\n'":rewind: *staging* rolled back automatically (failed rollout or smoke tests). Production not touched."; fi
+          bash scripts/notify-slack.sh "$MSG"
+      - name: Remove kubeconfig
+        if: always()
+        run: rm -f "$RUNNER_TEMP/kubeconfig"
+
+  # ---------------------------------------------------------- Waiting for approval (C13)
+  announce-approval:
+    name: Production waiting for approval
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          bash scripts/notify-slack.sh ":hourglass: *Production waiting for approval* - commit \`${GITHUB_SHA::7}\` (merged by ${{ github.actor }}) passed staging. Approve here: <$RUN_URL|run ${{ github.run_number }}>"
+
+  # ---------------------------------------------------------- Stage 4b (C12)
+  deploy-production:
+    name: Stage 4b deploy to production
+    needs: deploy-staging
+    runs-on: [self-hosted, linux, dhaba-vm]
+    # "production" environment has required reviewers = the team, self-review blocked
+    environment: production
+    concurrency: deploy-production
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TEAM: ${{ vars.TEAM }}
+      # exactly the images that passed staging - never a new build
+      PIN_IMAGES: ${{ needs.deploy-staging.outputs.images }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use the deployer ServiceAccount (C10), not admin
+        env:
+          KCFG: ${{ secrets.DEPLOYER_KUBECONFIG }}
+        run: |
+          printf '%s' "$KCFG" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+      - name: Deploy the staging images, wait, smoke test, roll back on failure
+        id: deploy
+        run: bash scripts/deploy.sh production "${{ github.sha }}"
+      - name: Alert #alerts (C13)
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          APPROVER=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "${{ github.api_url }}/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/approvals" \
+            | python3 -c 'import json,sys; a=json.load(sys.stdin); print(a[-1]["user"]["login"] if a else "unknown")' || echo unknown)
+          if [ "${{ steps.deploy.outcome }}" = "success" ]; then ICON=":rocket:"; RESULT="succeeded"; else ICON=":x:"; RESULT="FAILED"; fi
+          MSG="$ICON *production* deployment $RESULT - commit \`${GITHUB_SHA::7}\` merged by ${{ github.actor }}, approved by $APPROVER - <$RUN_URL|run ${{ github.run_number }}>"
+          if [ "${{ steps.deploy.outputs.rolled_back }}" = "true" ]; then MSG="$MSG"$'\n'":rewind: *production* rolled back automatically (failed rollout or smoke tests)."; fi
+          bash scripts/notify-slack.sh "$MSG"
+      - name: Remove kubeconfig
+        if: always()
+        run: rm -f "$RUNNER_TEMP/kubeconfig"

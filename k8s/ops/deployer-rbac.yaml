@@ -1,0 +1,66 @@
+# C10: the pipeline's own identity. It may change things ONLY in the staging and
+# production namespaces: no other namespaces, nothing cluster-wide.
+# Applied once by hand by a cluster admin:  kubectl apply -f k8s/ops/deployer-rbac.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployer
+  namespace: ops
+---
+# Long-lived token for the ServiceAccount (goes into the DEPLOYER_KUBECONFIG GitHub secret)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: deployer-token
+  namespace: ops
+  annotations:
+    kubernetes.io/service-account.name: deployer
+type: kubernetes.io/service-account-token
+---
+# A reusable set of rules. There is deliberately NO ClusterRoleBinding:
+# it only takes effect through the two RoleBindings below.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dhaba-deployer
+rules:
+  - apiGroups: [""]
+    resources: [configmaps, secrets, services, pods, pods/log, persistentvolumeclaims, events]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, replicasets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deployer
+  namespace: staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dhaba-deployer
+subjects:
+  - kind: ServiceAccount
+    name: deployer
+    namespace: ops
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deployer
+  namespace: production
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dhaba-deployer
+subjects:
+  - kind: ServiceAccount
+    name: deployer
+    namespace: ops

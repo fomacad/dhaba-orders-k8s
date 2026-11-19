@@ -42,11 +42,14 @@ spec:
               command: ["pg_isready", "-U", "dhaba"]
             initialDelaySeconds: 15
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "dhaba"]
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 5
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data

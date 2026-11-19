@@ -20,7 +20,7 @@ def fetch_menu():
                 cur.execute("SELECT id, name, price FROM menu_items ORDER BY id")
                 rows = cur.fetchall()
                 if rows:
-                    return [{"id": r[0], "name": r[1], "price": r[2]} for r in rows]
+                    return [{"id": r[0], "name": r[1], "price": float(r[2])} for r in rows]
     except Exception:
         pass
     return _DEFAULT_MENU

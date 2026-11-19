@@ -2,7 +2,7 @@
 FROM python:3.12-slim AS build
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # ---- final stage ----
 FROM python:3.12-slim AS final
@@ -10,9 +10,9 @@ ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=$GIT_COMMIT
 RUN addgroup --system app && adduser --system --ingroup app app
 WORKDIR /app
-COPY --from=build /root/.local /home/app/.local
+COPY --from=build /opt/venv /opt/venv
 COPY main.py db.py cache.py ./
-ENV PATH=/home/app/.local/bin:$PATH
+ENV PATH=/opt/venv/bin:$PATH
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \

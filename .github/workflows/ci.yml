@@ -77,10 +77,10 @@ jobs:
           go-version-file: orders-api/go.mod
           cache-dependency-path: orders-api/go.sum
       - name: Static analysis (golangci-lint)
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
         with:
           working-directory: orders-api
-          version: v1.64.8
+          version: latest
       - name: Unit tests (go test)
         working-directory: orders-api
         run: go test ./... -race -count=1

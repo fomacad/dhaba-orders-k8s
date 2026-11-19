@@ -24,12 +24,12 @@ function Menu({ onOrder }) {
   const { data } = useFetch('/api/menu', 0)
   const items = data?.items ?? []
   return (
-    <section>
+    <section className="panel menu">
       <h2>Menu</h2>
-      <ul>
+      <ul className="menu-grid">
         {items.map((item) => (
-          <li key={item.id}>
-            {item.name} - ${item.price}
+          <li key={item.id} className="dish-card">
+            <span className="dish">{item.name} - ${item.price}</span>
             <button onClick={() => onOrder(item)}>Order</button>
           </li>
         ))}
@@ -42,11 +42,12 @@ function Kitchen() {
   const { data } = useFetch('/api/orders', 3000)
   const orders = data?.orders ?? []
   return (
-    <section>
+    <section className="panel kitchen">
       <h2>Kitchen</h2>
-      <ul>
+      <ul className="order-list">
+        {orders.length === 0 && <li className="empty">No orders yet</li>}
         {orders.map((o) => (
-          <li key={o.id}>#{o.id} {o.dish} - {o.status}</li>
+          <li key={o.id} className={`order status-${o.status}`}>#{o.id} {o.dish} - {o.status}</li>
         ))}
       </ul>
     </section>
@@ -56,10 +57,10 @@ function Kitchen() {
 function Stats() {
   const { data } = useFetch('/api/stats', 5000)
   return (
-    <section>
+    <section className="panel stats">
       <h2>Live Stats</h2>
-      <p>Orders/min: {data?.orders_per_minute ?? '-'}</p>
-      <p>Top dishes: {(data?.top_dishes ?? []).join(', ')}</p>
+      <p className="stat-number">Orders/min: {data?.orders_per_minute ?? '-'}</p>
+      <p className="stat-dishes">Top dishes: {(data?.top_dishes ?? []).join(', ')}</p>
     </section>
   )
 }
@@ -74,11 +75,16 @@ export default function App() {
   }
 
   return (
-    <main>
-      <h1>Dhaba Orders</h1>
+    <main className="app">
+      <header className="hero">
+        <h1>Dhaba Orders</h1>
+        <p className="tagline">Fresh off the tawa, straight to your table.</p>
+      </header>
       <Menu onOrder={placeOrder} />
-      <Kitchen />
-      <Stats />
+      <div className="side-by-side">
+        <Kitchen />
+        <Stats />
+      </div>
     </main>
   )
 }
